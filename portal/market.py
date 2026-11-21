@@ -3,7 +3,8 @@ holders from shareholding filings. Controlled by `market_data:` in config/source
 
 Free sources used:
   * Yahoo Finance via the yfinance package (prices, basic fundamentals). Unofficial but
-    free; some SME stocks are missing there, so NSE's own price history is the fallback.
+    free; many SME stocks are missing there, so NSE's daily bhavcopy (all stocks in one file)
+    is the main source for NSE prices, with NSE's per-stock history as a last fallback.
   * Macro: FRED (API key from config/api_keys.yaml, else FRED's public CSV), then Yahoo
     Finance (US 10Y, USD/INR, Brent, Nifty, India VIX) and the NY Fed (effective Fed funds
     rate) when FRED is unreachable. RBI home page for the policy repo rate.
@@ -103,16 +104,62 @@ def _store_prices(conn, sym, df, src):
                        x.get("close"), x.get("volume"), src) for d, x in df.iterrows()])
 
 
+def _bhavcopy_prices(conn, rows, settings, mcfg, log):
+    """NSE's daily bhavcopy: ONE file per trading day holds every NSE stock (SME included).
+    Far more reliable than per-stock history. Fetches only days not stored yet, newest first,
+    at most bhav_max_per_run files per run (the history fills in over a few runs)."""
+    import zipfile
+    http = _http(settings, "nse_bhavcopy")
+    url = mcfg.get("bhavcopy_url", "https://nsearchives.nseindia.com/content/cm/"
+                   "BhavCopy_NSE_CM_0_0_0_{date}_F_0000.csv.zip")
+    days = int(mcfg.get("bhav_history_days", 400))
+    cap = int(mcfg.get("bhav_max_per_run", 120))
+    have = {r[0] for r in conn.execute("SELECT DISTINCT date FROM prices WHERE source='nse_bhav'")}
+    nse_syms = {s for s, r in rows.items() if (r.get("exchange") or "NSE").upper() == "NSE"}
+    today, tried, stored, fails = date.today(), 0, 0, 0
+    d = today
+    while (today - d).days <= days and tried < cap:
+        if d.weekday() < 5 and d.isoformat() not in have:
+            tried += 1
+            try:
+                r = http.get(url.replace("{date}", d.strftime("%Y%m%d")), timeout=60)
+                z = zipfile.ZipFile(io.BytesIO(r.content))
+                df = pd.read_csv(z.open(z.namelist()[0]))
+                df = df[df["TckrSymb"].isin(nse_syms)]
+                conn.executemany(
+                    "INSERT OR REPLACE INTO prices VALUES (?,?,?,?,?,?,?,?)",
+                    [(x.TckrSymb, d.isoformat(), x.OpnPric, x.HghPric, x.LwPric, x.ClsPric,
+                      x.TtlTradgVol, "nse_bhav") for x in df.itertuples()])
+                conn.commit()
+                stored += 1
+            except Exception as e:      # holidays are 404: normal
+                if "404" not in str(e):
+                    fails += 1
+                    log(f"  bhavcopy {d}: {e}")
+                    if fails >= 5:
+                        log("  bhavcopy: too many errors, stopping for this run")
+                        break
+        d -= timedelta(days=1)
+    log(f"prices: NSE bhavcopy stored {stored} trading days ({tried} tried)")
+
+
 def update_prices(conn, settings, mcfg, log=print):
     rows, prio = universe(conn, mcfg)
     if not rows:
         log("prices: nothing to fetch - add stocks on the Watchlist page or set market_data.universe: all_sme")
         return
+    if mcfg.get("bhavcopy", True):
+        try:
+            _bhavcopy_prices(conn, rows, settings, mcfg, log)
+        except Exception as e:
+            log(f"  bhavcopy failed: {type(e).__name__}: {e}")
     years = int(mcfg.get("price_history_years", 3))
     today = date.today()
     last = {r[0]: r[1] for r in conn.execute("SELECT symbol, MAX(date) FROM prices GROUP BY symbol")}
     stale_before = (today - timedelta(days=1)).isoformat()
-    todo = [s for s in rows if s in prio or not last.get(s) or last[s] < stale_before]
+    # stocks the NSE bhavcopy covers (illiquid ones simply did not trade) need no Yahoo / per-stock NSE call
+    bhav = {r[0] for r in conn.execute("SELECT DISTINCT symbol FROM prices WHERE source='nse_bhav'")}         if mcfg.get("bhavcopy", True) else set()
+    todo = [s for s in rows if s not in bhav and (s in prio or not last.get(s) or last[s] < stale_before)]
     new = [s for s in todo if not last.get(s)]
     old = sorted((s for s in todo if last.get(s)), key=lambda s: last[s])
     ok, missing = 0, []

@@ -23,6 +23,9 @@ extraction:
 market_data:
   prices: true                  # Yahoo Finance daily prices (yfinance); NSE price history as fallback
   price_history_years: 3
+  bhavcopy: true                # NSE daily bhavcopy: every NSE stock incl. SME, one file per day (main NSE price source)
+  bhav_history_days: 400        # how far back to fill
+  bhav_max_per_run: 120         # files per run; history fills over a few runs
   fundamentals: true            # Yahoo Finance P/E, P/B, ROE, market cap... (thin for some SMEs)
   macro: true                   # FRED: US 10Y, Fed funds, USD/INR, Brent, India 10Y; RBI repo rate
   holders: true                 # named holders >1% parsed from NSE shareholding XBRL files
