@@ -72,6 +72,24 @@ CREATE TABLE IF NOT EXISTS summaries (
 );
 CREATE INDEX IF NOT EXISTS ix_items_symbol ON raw_items(symbol);
 CREATE INDEX IF NOT EXISTS ix_facts_symbol ON facts(symbol);
+
+CREATE TABLE IF NOT EXISTS dalalos_holdings (
+    symbol TEXT NOT NULL, period_end TEXT NOT NULL,
+    promoter_pct REAL, fii_pct REAL, dii_pct REAL, mf_pct REAL, retail_pct REAL,
+    fii_chg_pp REAL, dii_chg_pp REAL, pledged_pct REAL, named_json TEXT, fetched_at TEXT,
+    PRIMARY KEY (symbol, period_end)
+);
+CREATE TABLE IF NOT EXISTS dalalos_deals (
+    symbol TEXT NOT NULL, deal_date TEXT NOT NULL, deal_type TEXT, client TEXT NOT NULL,
+    side TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, exchange TEXT, fetched_at TEXT,
+    PRIMARY KEY (symbol, deal_date, client, side, qty, price)
+);
+CREATE TABLE IF NOT EXISTS dalalos_insider (
+    symbol TEXT NOT NULL, person TEXT NOT NULL, category TEXT, side TEXT NOT NULL,
+    shares REAL NOT NULL, value_inr REAL, trade_from TEXT NOT NULL, mode TEXT, source TEXT,
+    fetched_at TEXT,
+    PRIMARY KEY (symbol, person, trade_from, side, shares)
+);
 """
 
 

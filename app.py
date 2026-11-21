@@ -772,6 +772,61 @@ def page_macro():
                      column_config={"source_url": st.column_config.LinkColumn("link")})
 
 
+def page_dalalos():
+    st.title("Institutional holdings (DalalOS)")
+    st.caption("Quarterly FII / DII / MF holdings, bulk-block deals and insider trades from DalalOS, "
+               "joined with the portal's own prices. Stored in the database snapshot; refreshed by "
+               "running the institutional-holdings skill in Claude Code, then `python sync_data.py publish`.")
+    with connect() as conn:
+        syms = [r[0] for r in conn.execute(
+            "SELECT symbol FROM dalalos_holdings UNION SELECT symbol FROM dalalos_deals "
+            "UNION SELECT symbol FROM dalalos_insider ORDER BY 1")]
+        if not syms:
+            st.info("No DalalOS data loaded yet. Run `python -m portal.dalalos` after saving files in data/imports/dalalos/.")
+            return
+        rows = []
+        for sym in syms:
+            h = conn.execute("SELECT * FROM dalalos_holdings WHERE symbol=? ORDER BY period_end DESC LIMIT 1", (sym,)).fetchone()
+            px = conn.execute("SELECT date, close FROM prices WHERE symbol=? ORDER BY date DESC LIMIT 1", (sym,)).fetchone()
+            d = conn.execute("SELECT COUNT(*), COALESCE(SUM(CASE WHEN side LIKE 'B%' OR side='P' THEN qty ELSE -qty END),0) "
+                             "FROM dalalos_deals WHERE symbol=? AND deal_date >= date('now','-180 day')", (sym,)).fetchone()
+            ins = conn.execute("SELECT COALESCE(SUM(CASE WHEN side='buy' THEN value_inr ELSE -value_inr END),0) "
+                               "FROM dalalos_insider WHERE symbol=?", (sym,)).fetchone()[0]
+            rows.append({"Symbol": sym, "Close": px["close"] if px else None, "Price date": px["date"] if px else None,
+                         "Holdings as of": h["period_end"] if h else None,
+                         "Promoter %": h["promoter_pct"] if h else None, "FII %": h["fii_pct"] if h else None,
+                         "FII QoQ pp": h["fii_chg_pp"] if h else None, "DII %": h["dii_pct"] if h else None,
+                         "DII QoQ pp": h["dii_chg_pp"] if h else None, "MF %": h["mf_pct"] if h else None,
+                         "Pledge %": h["pledged_pct"] if h else None,
+                         "Deals 180d": d[0], "Net deal qty": d[1], "Net insider Rs": ins})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.caption("Blank FII / DII / MF = not disclosed in the filing (not zero). SME stocks usually have no DalalOS "
+                   "shareholding, only deals; use the Stock page for their NSE holders.")
+        sym = st.selectbox("Detail for", syms)
+        hist = pd.read_sql("SELECT period_end AS Quarter, promoter_pct AS 'Promoter %', fii_pct AS 'FII %', fii_chg_pp AS 'FII chg pp', "
+                           "dii_pct AS 'DII %', dii_chg_pp AS 'DII chg pp', mf_pct AS 'MF %', retail_pct AS 'Retail/other %', "
+                           "pledged_pct AS 'Pledge %' FROM dalalos_holdings WHERE symbol=? ORDER BY period_end DESC", conn, params=(sym,))
+        if len(hist):
+            st.subheader("Holdings by quarter")
+            st.dataframe(hist, hide_index=True, use_container_width=True)
+            named = []
+            for r in conn.execute("SELECT period_end, named_json FROM dalalos_holdings WHERE symbol=? ORDER BY period_end DESC", (sym,)):
+                named += [{"Quarter": r[0], "Holder": n["name"], "%": n["pct"]} for n in json.loads(r[1] or "[]")]
+            if named:
+                st.subheader("Named holders above 1%")
+                st.dataframe(pd.DataFrame(named), hide_index=True, use_container_width=True)
+        deals = pd.read_sql("SELECT deal_date AS Date, deal_type AS Type, client AS Client, side AS Side, qty AS Qty, price AS Price, "
+                            "exchange AS Exchange FROM dalalos_deals WHERE symbol=? ORDER BY deal_date DESC", conn, params=(sym,))
+        if len(deals):
+            st.subheader("Bulk / block deals")
+            st.dataframe(deals, hide_index=True, use_container_width=True)
+        ins = pd.read_sql("SELECT trade_from AS Date, person AS Person, category AS Category, side AS Side, shares AS Shares, "
+                          "value_inr AS 'Value Rs', mode AS Mode FROM dalalos_insider WHERE symbol=? ORDER BY trade_from DESC", conn, params=(sym,))
+        if len(ins):
+            st.subheader("Insider trades")
+            st.dataframe(ins, hide_index=True, use_container_width=True)
+
+
 def sidebar_fetch():
     if st.sidebar.button("Fetch latest data", type="primary"):
         box = st.sidebar.empty()
@@ -786,7 +841,7 @@ def sidebar_fetch():
 
 
 PAGES = {"Watchlist": page_watchlist, "SME universe": page_universe, "Stock": page_stock,
-         "Top investors": page_investors, "All SME signals": page_signals,
+         "Top investors": page_investors, "Institutional (DalalOS)": page_dalalos, "All SME signals": page_signals,
          "Macro": page_macro, "Scorecard rules": page_rules, "Sources": page_sources, "All items": page_items}
 if "page" in st.session_state and st.session_state["page"] in PAGES:
     st.session_state["nav"] = st.session_state.pop("page")
