@@ -827,6 +827,12 @@ def page_dalalos():
             st.dataframe(ins, hide_index=True, use_container_width=True)
 
 
+def page_about():
+    from pathlib import Path
+    readme = Path(__file__).resolve().parent / "README.md"
+    st.markdown(readme.read_text(encoding="utf-8") if readme.exists() else "README.md not found.")
+
+
 def sidebar_fetch():
     if st.sidebar.button("Fetch latest data", type="primary"):
         box = st.sidebar.empty()
@@ -842,7 +848,7 @@ def sidebar_fetch():
 
 PAGES = {"Watchlist": page_watchlist, "SME universe": page_universe, "Stock": page_stock,
          "Top investors": page_investors, "Institutional (DalalOS)": page_dalalos, "All SME signals": page_signals,
-         "Macro": page_macro, "Scorecard rules": page_rules, "Sources": page_sources, "All items": page_items}
+         "Macro": page_macro, "Scorecard rules": page_rules, "Sources": page_sources, "All items": page_items, "About / README": page_about}
 if "page" in st.session_state and st.session_state["page"] in PAGES:
     st.session_state["nav"] = st.session_state.pop("page")
 choice = st.sidebar.radio("Go to", list(PAGES), key="nav")

@@ -1,270 +1,286 @@
 # SME Signal Portal
 
-A personal research portal for NSE Emerge / BSE SME stocks. It pulls exchange filings,
-bulk/block deals, insider and SAST disclosures, shareholding patterns, concalls, news,
-daily prices, fundamentals and macro data (RBI, Fed, US 10Y, INR, crude), and gives every
-stock a **Buy / Hold / Sell / Avoid** call from rules you can edit. Every call can be
-traced back to the original filing, with its fetch time and content hash.
+A personal research portal for **NSE Emerge / BSE SME stocks**. It collects exchange filings,
+bulk/block deals, insider and SAST disclosures, shareholding patterns, concalls, news, daily
+prices, fundamentals and macro data (RBI, Fed, US 10Y, INR, crude), and gives every stock a
+**Buy / Hold / Sell / Avoid** call from scoring rules you can edit. Every call can be traced
+back to the original filing, with its fetch time and content hash.
 
 > **Personal use only. Not investment advice.** Check every source yourself. Publishing
 > buy/sell calls to others can require SEBI registration.
 
-**Pages**
-* **SME universe** - every NSE SME stock: price moves, valuation, signal; filter, sort, add to watchlist.
-* **Watchlist** - add stocks (and their peers); price, day/month/year change, final call,
-  and alerts when a new fund or investor enters.
-* **Stock** - final scorecard and why, price chart with 50/200-DMA, holders above 1% with
-  NEW / EXITED flags, promoter holding over time, deals / insider / SAST / fund activity,
-  concalls with one-click Claude summaries, news, peer comparison, and the source evidence.
-* **Top investors** - well-known Indian investors, fund managers, PMS/AIFs and fund houses
-  (editable list); each one's SME holdings above 1%, new entries / increases / cuts / exits,
-  their deals and SAST disclosures, and news mentioning them.
-* **All SME signals** - every SME stock seen in filings, ranked.
-* **Macro** - RBI repo rate, US 10Y, Fed funds, USD/INR, Brent, India 10Y, RBI and Fed
-  announcements, and how the macro rules move every stock's score.
-* **Scorecard rules** - edit every score, weight and threshold, with a live preview.
-* **Sources** - turn sources on/off, see errors, run them.
+---
 
-## API keys: one file
+## 1. What it does
 
-Everything that needs a key lives in **`config/api_keys.yaml`** (git-ignored). Paste a key
-between the quotes and save; it is loaded when the app or `ingest.py` starts. Blank = skipped.
+1. **Collects** data from free sources (NSE, BSE, Yahoo Finance, FRED, RBI, Google News RSS, ...)
+   and optional paid ones, through small plug-in *source adapters*.
+2. **Stores** every record in a local SQLite database (`data/portal.db`) with its source URL,
+   fetch time and a sha256 content hash, so any number can be audited later.
+3. **Extracts facts** from unstructured text (filings, news) with keyword rules, or with Claude
+   when an API key is set. Structured data (deals, insider trades, shareholding) is parsed directly.
+4. **Scores** each stock: fact score x source reliability x confidence x time decay, plus price
+   momentum, valuation vs peers, tracked-investor moves and macro rules. Hard stops force **Avoid**.
+5. **Shows** it in a Streamlit dashboard, locally or on Streamlit Cloud.
+6. **Adds DalalOS data** (institutional holdings, bulk/block deals, insider trades) through an MCP
+   integration, joined with the portal's own prices.
 
-| Key | Needed? | What it gives you |
-|---|---|---|
-| `FRED_API_KEY` | Recommended, free (fredaccount.stlouisfed.org/apikeys) | Reliable US 10Y, Fed funds, USD/INR, Brent, India 10Y. Without it the app uses FRED's public CSV, then Yahoo Finance / NY Fed |
-| `ANTHROPIC_API_KEY` | Optional | Claude fact extraction and concall summaries |
-| `TRENDLYNE_API_KEY`, `TIJORI_API_KEY`, `RESEARCHBYTES_API_KEY`, `MORNINGSTAR_API_KEY`, `SCREENER_COOKIE` | Only if you subscribe | Paid sources, see "Adding a paid source" |
+### Dashboard pages
 
-Everything else (NSE, Yahoo Finance, NY Fed, RBI, Google News RSS) needs no key.
+| Page | What it shows |
+|---|---|
+| Watchlist | Your stocks and peers: price, day/month/year change, final call, new fund/investor alerts |
+| SME universe | Every NSE SME stock: price moves, valuation, signal; filter, sort, add to watchlist |
+| Stock | Scorecard and why, price chart with 50/200-DMA, holders above 1% (NEW/EXITED flags), promoter holding, deals / insider / SAST, concalls with one-click Claude summaries, news, peers, source evidence |
+| Top investors | Well-known investors / fund managers / PMS / AIFs (editable list) and their SME holdings and moves |
+| Institutional (DalalOS) | Quarterly FII / DII / MF holdings, QoQ change, pledge, bulk/block deals and insider trades, joined with portal prices |
+| All SME signals | Every SME stock seen in filings, ranked |
+| Macro | RBI repo, US 10Y, Fed funds, USD/INR, Brent, India 10Y, central-bank announcements and their effect on scores |
+| Scorecard rules | Edit every score, weight and threshold with a live before/after preview |
+| Sources | Turn sources on/off, see errors, run them |
+| All items | Raw stored items |
+| About / README | This document |
 
-## Coverage: the whole SME universe
+---
 
-`market_data.universe: all_sme` (default) fetches prices for every NSE SME stock and fundamentals
-(P/E, market cap, ROE...) in rotation (`fundamentals_max_per_run`, default 250 per run, so the full
-~580 fill in over 2-3 runs). The **SME universe** page lists all of them; tick rows to add to your
-watchlist. Shareholding history for other stocks is swept 60 stocks per run
-(`nse_sme_shareholding.sweep_per_run`), and news is matched against every SME company name. Peers
-default to same-industry stocks when you have not set any.
+## 2. Architecture
 
-Known gaps (source side, not fixable here): NSE's insider-trading (PIT) endpoint has returned no
-rows after early May 2026; BSE-only SME stocks have no holder parsing; BSE bulk deals need the
-CSV import (BSE's page is now JavaScript-rendered).
+```
+                ┌────────────────────────── local machine ──────────────────────────┐
+ NSE / BSE /    │  portal/sources/*  (adapters, auto-registered)                    │
+ Yahoo / FRED / │        │ RawItem (url, fetched_at, sha256)                        │
+ RBI / News ───►│        ▼                                                          │
+                │  portal/ingest.py ──► raw_items ──► portal/extract.py ──► facts   │
+                │  portal/market.py ──► prices, fundamentals, macro, holders        │
+                │                         │                                         │
+ DalalOS MCP ──►│  (Claude session) ─► data/imports/dalalos/*.json                  │
+ (Claude Code)  │        └─ portal/dalalos.py ─► dalalos_holdings/deals/insider     │
+                │                         ▼                                         │
+                │                   data/portal.db  (SQLite)                        │
+                │                         │                                         │
+                │   portal/scoring.py + portal/insights.py + portal/investors.py    │
+                │         (recomputed from stored facts on every read)              │
+                │                         ▼                                         │
+                │                    app.py  (Streamlit)                            │
+                └──────────────┬────────────────────────────────────────────────────┘
+                               │ python sync_data.py publish
+                               ▼
+              GitHub branch `data-snapshot`  (portal.db.gz, ONE force-pushed commit)
+                               │ sync_data.py pull  (at app start, re-checked hourly)
+                               ▼
+              Streamlit Cloud  (PORTAL_HOSTED=1: read-only viewer of the snapshot)
+```
 
-## Run it
+### Data flow
 
-Needs Python 3.10 or newer (python.org; on Windows tick **"Add python.exe to PATH"** when installing).
+`source adapters -> raw_items -> facts -> scoring -> signal`, all in `data/portal.db`.
 
-**Windows, easiest:** unzip, open the folder that contains `run.bat` and `app.py`
-(Windows sometimes makes a folder inside a folder with the same name), and double-click
-**`run.bat`**. The first run installs everything (a few minutes), fetches real data and
-opens the dashboard in your browser. Later, `run.bat` fetches new data and opens the
-dashboard; `dashboard.bat` opens it without fetching.
+* **Adapters** (`portal/sources/`) subclass `SourceAdapter`, register with `@register("name")` and
+  yield `RawItem`s. They are wired to `config/sources.yaml` entries by `adapter: name`. Requests are
+  rate limited (3 s gap) and obey robots.txt. Items with pre-structured data attach `facts=[...]`
+  and skip extraction.
+* **Ingest** (`portal/ingest.py`) dedupes on `(source, external_id)` and records the hash and fetch
+  time. One failing source never stops the others; errors show on the Sources page.
+* **Extraction** (`portal/extract.py`) turns text into typed facts with keyword rules from
+  `scorecard.yaml`, or Claude (`extraction:` in `sources.yaml`; default `claude-opus-5-5`, effort low).
+* **Scoring** (`portal/scoring.py`) applies score x reliability x confidence x half-life decay,
+  summed per stock; hard-stop facts (pledge, auditor resignation, default, SEBI action) force Avoid.
+  Scores are recomputed from stored facts every time, so rule edits apply instantly.
+* **Final call** (`portal/insights.py`):
+  ```
+  total = filings, deals & news score   (decayed, weighted facts)
+        + price momentum                (above/below 200-DMA, strong/weak 3-month return)
+        + valuation vs peers            (P/E vs median of listed peers)
+        + tracked investors             (new entry / increase / cut / exit)
+        + macro                         (macro_rules: repo/Fed moves, US 10Y, INR, crude)
+  Buy if total >= 6, Sell if <= -3, else Hold. Any hard stop = Avoid.
+  ```
+  All numbers live in `config/scorecard.yaml` (`final_scorecard`, `macro_rules`).
+* **Market data** (`portal/market.py`, `portal/universe.py`): Yahoo prices with NSE bhavcopy as
+  fallback, fundamentals (rotated per run), macro (FRED -> public CSV -> Yahoo / NY Fed), and
+  XBRL holders above 1%.
 
-**By hand (Windows Command Prompt):**
+### Repository layout
+
+```
+app.py                      Streamlit dashboard (all pages)
+ingest.py                   CLI entry: fetch data
+sync_data.py                publish / pull the database snapshot via GitHub
+run.bat / run.sh            set up + ingest + open dashboard
+dashboard.bat               open dashboard only
+update.bat                  daily job: ingest, then publish snapshot (log: data/update.log)
+config/scorecard.yaml       all scoring rules
+config/sources.yaml         sources, watchlist, aliases, extraction settings
+config/investors.yaml       tracked investors and aliases
+config/api_keys.yaml        your keys (git-ignored; copy from api_keys.example.yaml)
+portal/dalalos.py           load DalalOS MCP results into the database
+portal/                     db, config, ingest, extract, scoring, insights, investors, market, universe, dalalos
+portal/sources/             one file per adapter (nse, bse, bse_deals, google_news, web, generic, demo, paid_template)
+tests/                      scoring, adapters, insights (use the offline demo source)
+.claude/skills/institutional-holdings/SKILL.md   Claude Code skill for DalalOS data
+CLAUDE.md                   guidance for Claude Code instances
+data/                       portal.db and imports (git-ignored)
+```
+
+### Database tables
+
+`raw_items`, `facts`, `source_runs`, `watchlist`, `prices`, `fundamentals`, `holders`, `macro`,
+`summaries`, plus `dalalos_holdings`, `dalalos_deals`, `dalalos_insider`.
+
+---
+
+## 3. What it is built with
+
+| Layer | Technology |
+|---|---|
+| UI | Streamlit |
+| Data handling | pandas, SQLite (stdlib `sqlite3`) |
+| Config | YAML (PyYAML), validated in `portal/config.py` |
+| HTTP / parsing | requests, lxml, pypdf, openpyxl |
+| Prices | yfinance (Yahoo), NSE bhavcopy (`nsearchives.nseindia.com`) |
+| AI extraction (optional) | Anthropic API (`anthropic`), pydantic |
+| Institutional data | DalalOS MCP (https://dalalos.in) via Claude Code |
+| Hosting | Streamlit Cloud + GitHub branch as the data store |
+| Language | Python 3.10+ |
+
+---
+
+## 4. How to run it
+
+Needs Python 3.10 or newer. Always run commands from the folder that contains `app.py`.
+
+**Windows, easiest:** double-click `run.bat`. The first run installs everything, fetches data and
+opens the dashboard. Later runs fetch new data and open it. `dashboard.bat` opens without fetching.
+
+**By hand:**
 
 ```bat
-cd C:\path\to\sme-signal-portal        :: the folder that contains app.py
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\activate          :: macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-python ingest.py                         :: fetches real data (a few minutes)
-python -m streamlit run app.py           :: opens http://localhost:8501
+python ingest.py                :: fetch data (a few minutes; exchange sites are queried slowly on purpose)
+python -m streamlit run app.py  :: http://localhost:8501
 ```
 
-**macOS / Linux:** `./run.sh`, or the same steps with `source .venv/bin/activate`.
-
-Always run commands from the folder that contains `app.py`. `python ingest.py`,
-`python -m portal.ingest` and `python portal\ingest.py` all work.
-
-### First run
-
-1. The free sources are already switched on, so the first run fetches real data. This takes
-   a few minutes because the exchange sites are queried slowly on purpose.
-2. Open the **Watchlist** page and add your stocks (NSE symbol, or BSE code with exchange
-   BSE), with their peers and the company name. Then press **Fetch latest data** in the
-   sidebar. That loads prices, fundamentals, holders and peer data for them.
-3. If a source fails, a red box at the top lists it, and the **Sources** page shows the error.
-   Send the error text and it can be fixed. Other sources keep working.
-
-To try the app with no internet, set `demo: enabled: true` in `config/sources.yaml`
-(fictional companies).
-
-Run ingest once a day: point Windows Task Scheduler at `.venv\\Scripts\\python.exe ingest.py`
-(start in the project folder), or use cron on macOS/Linux.
-
-### Optional: Claude for fact extraction
-
-Without an API key, facts come from keyword rules in the scorecard (free, offline, rougher).
-With a key, Claude reads each filing and returns typed facts with an exact evidence quote.
+### Useful commands
 
 ```bash
-set ANTHROPIC_API_KEY=sk-ant-...         # macOS/Linux: export ANTHROPIC_API_KEY=sk-ant-...
-python ingest.py --reextract     # redo facts for stored items with Claude
+python ingest.py --source NAME      # one source, even if disabled
+python ingest.py --reextract        # redo facts for stored items (after scorecard keyword edits)
+python ingest.py --market-only      # prices / fundamentals / macro only
+python ingest.py --add SYM ...      # add to watchlist
+python -m pytest tests              # tests (pip install pytest first; they use the offline demo source)
+python sync_data.py publish         # upload data/portal.db to the data-snapshot branch
+python sync_data.py pull            # download it (keeps data/portal.before-pull.db)
+python -m portal.dalalos            # load DalalOS JSON files from data/imports/dalalos/
 ```
 
-Model and effort are set under `extraction:` in `config/sources.yaml`
-(default `claude-opus-5-5` at `effort: low`). Structured data (bulk/block deals, insider
-trades, shareholding) never goes to Claude; it is parsed directly.
+Run ingest once a day: Windows Task Scheduler on `update.bat` (it ingests, then publishes), or cron.
 
-## Top investors
+### First run
+1. Free sources are already on. The first run takes a few minutes.
+2. Add your stocks on the **Watchlist** page (NSE symbol, or BSE code with exchange BSE), with
+   peers, then press **Fetch latest data** in the sidebar.
+3. A red box at the top lists failing sources; the **Sources** page shows the error.
+4. To try it offline set `demo: enabled: true` in `config/sources.yaml` (fictional companies).
 
-The list lives in `config/investors.yaml` (or the Top investors page > Edit list). Each entry
-has a name, type, optional fund manager, `credible: true/false`, and `aliases` - every spelling
-and holding entity used in filings (e.g. "Mukul Mahavir Agrawal", "Param Capital"). The
-starter list is well-known public names; check the aliases yourself.
+### API keys: one file
+Everything needing a key lives in `config/api_keys.yaml` (git-ignored). Blank = skipped.
 
-* Holdings come from the "holders above 1%" section of NSE shareholding XBRL filings. With
-  `holders_scope: all_sme` (default) every SME stock's filings are read, at most 150 files
-  per run, so the first full backfill takes a few daily runs.
-* SME filings are half-yearly, so a new entry can show up months late. Bulk/block deals,
-  SAST disclosures and monthly fund portfolios (`amfi_fund_portfolios`) catch moves sooner.
-* On a stock page, tracked investors are listed first; if none hold it, the major
-  shareholders (promoters and biggest holders) are shown.
-* New entries / increases by credible investors add points to the final call; cuts and
-  exits subtract (`final_scorecard.tracked_investors` in scorecard.yaml).
-* BSE-only SME stocks: holder parsing is NSE-only for now. TODO(YOU): Trendlyne's superstar
-  portfolios (paid) can fill this through the `trendlyne_superstars` placeholder.
-
-## The final Buy / Hold / Sell call
-
-```
-total = filings, deals & news score   (decayed, weighted facts - see below)
-      + price momentum                 (above/below 200-DMA, strong/weak 3-month return)
-      + valuation vs peers             (P/E vs the median of the peers you list)
-      + tracked investors              (new entry / increase / cut / exit in the latest filing)
-      + macro                          (macro_rules: repo/Fed moves, US 10Y, INR, crude)
-Buy if total >= 6, Sell if <= -3, else Hold. Any hard stop = Avoid.
-```
-
-Every number above is in `config/scorecard.yaml` under `final_scorecard` and `macro_rules`,
-and editable on the Scorecard rules page (tab "Final call & macro").
-
-## Where each kind of data comes from
-
-| Data | Source | Notes |
+| Key | Needed? | Gives you |
 |---|---|---|
-| Daily prices | Yahoo Finance (yfinance), NSE price history as fallback | Some SME stocks are missing on Yahoo; set the `ticker` on the Watchlist page if needed |
-| P/E, P/B, ROE, market cap | Yahoo Finance | Often thin for SMEs; add Screener/Tijori via the paid placeholders for better data |
-| Holders above 1% | NSE shareholding XBRL files (watchlist stocks) | Half-yearly for SMEs, so a new fund shows up with a delay |
-| Fund portfolios | Monthly fund house files (`amfi_fund_portfolios`) | Earlier than SME shareholding filings |
-| Deals, insider, SAST | NSE / BSE | Daily |
-| Concalls | Exchange announcements, company IR pages, AlphaStreet | "Summarise with Claude" needs ANTHROPIC_API_KEY |
-| Macro | FRED (US 10Y, Fed funds, USD/INR, Brent, India 10Y), rbi.org.in (repo rate), RBI and Fed RSS | The repo rate is read daily, so its history builds up from your first run |
+| `FRED_API_KEY` | Recommended, free | Reliable US 10Y, Fed funds, USD/INR, Brent, India 10Y |
+| `ANTHROPIC_API_KEY` | Optional | Claude fact extraction and concall summaries |
+| `TRENDLYNE_API_KEY`, `TIJORI_API_KEY`, `RESEARCHBYTES_API_KEY`, `MORNINGSTAR_API_KEY`, `SCREENER_COOKIE` | Only if you subscribe | Paid sources |
 
-## How the filings score is built
+---
+
+## 5. Deploying on Streamlit Cloud
+
+The cloud app is a **read-only viewer** of a database snapshot; it never fetches data itself.
+
+1. Push the code to GitHub; create the Streamlit Cloud app with main file `app.py`.
+2. Set env `PORTAL_HOSTED=1` (hides the Fetch button and enables snapshot download). If the repo
+   is private, also set `GITHUB_TOKEN`.
+3. On your machine run `python ingest.py`, then `python sync_data.py publish`. This force-pushes
+   `portal.db.gz` as a single commit to branch `data-snapshot`, so the repo never grows by more than
+   one copy.
+4. The app downloads the snapshot at start and re-checks hourly (`ensure_data()` in `app.py`,
+   cached for 3600 s). To see fresh data immediately use **Manage app -> Reboot app**.
+
+Publishing uploads your **whole** local database.
+
+---
+
+## 6. DalalOS integration (institutional holdings)
+
+The DalalOS MCP server is connected to Claude Code. MCP tools run **only inside a Claude session**,
+not inside Streamlit, so the flow is:
 
 ```
-source adapters ──> raw_items (url, fetched_at, sha256) ──> facts (type, evidence, confidence)
-                                                                │
-                      scorecard.yaml ──> score × source reliability × confidence × time decay
-                                                                │
-                                         sum per stock ──> Bullish / Neutral / Bearish
-                                         any hard stop  ──> Avoid
+Claude Code + institutional-holdings skill ─► MCP: get_shareholding, get_bulk_block_deals,
+        get_insider_trades, get_pledge_trend ─► data/imports/dalalos/<SYMBOL>.json
+        ─► python -m portal.dalalos ─► dalalos_* tables ─► sync_data.py publish ─► Streamlit Cloud
 ```
 
-* **Score**: each fact type has a score from -5 to +5.
-* **Source reliability**: exchange filings count 1.0, news 0.6, forums 0.3 (editable).
+JSON file shape: `{"symbol": "BLS", "shareholding": <data of get_shareholding>, "deals": <data.deals>, "insider": <data.results>}`.
+
+**Coverage (checked 2026-11-21):**
+
+| Tool | Mainboard (BLS, BSL) | NSE SME (CUDML, GSMFOILS, ENCOMPAS) |
+|---|---|---|
+| Shareholding (FII/DII/MF %, QoQ, named holders) | Yes | `no_data` for the ones tried |
+| Pledge trend | Yes | Expect no data |
+| Bulk / block deals | Yes | Yes, current to the previous trading day |
+| Insider trades | Yes | Only BSE-listed companies; NSE-only are not covered |
+
+So for SME stocks, DalalOS mainly adds **deals and insider trades**; SME holdings still come from the
+portal's own NSE shareholding files. DalalOS returns evidence, not recommendations. Blank FII/DII/MF
+values mean "not disclosed", not zero.
+
+---
+
+## 7. The Buy / Hold / Sell scoring in detail
+
+* **Fact score**: each fact type has a score from -5 to +5.
+* **Source reliability**: exchange filings 1.0, news 0.6, forums 0.3 (editable).
 * **Time decay**: a fact loses half its weight every `half_life_days` (default 90).
-* **Hard stops** (pledge, auditor resignation, default, SEBI action) force **Avoid**.
-* Scores are recomputed from stored facts every time, so rule edits apply instantly.
+* **Hard stops** force **Avoid**.
 
-## Adjusting the scorecard
+Edit `config/scorecard.yaml` or use the **Scorecard rules** page: fact scores and keywords,
+weights and thresholds, investor lists (`credible` / `avoid`). Every save backs up the old file to
+`config/backups/`. After adding fact types or keywords press **Re-extract all** (or
+`python ingest.py --reextract`).
 
-Either edit `config/scorecard.yaml`, or use the **Scorecard rules** page:
+### Top investors
+The list is in `config/investors.yaml` (or Top investors > Edit list): name, type, optional fund
+manager, `credible`, and `aliases` (every spelling used in filings; check them yourself).
+Holdings come from the "holders above 1%" section of NSE shareholding XBRL filings
+(`holders_scope: all_sme`, at most 150 files per run). SME filings are half-yearly, so new entries
+can appear months late; deals, SAST and monthly fund portfolios catch moves sooner.
 
-* **Fact scores**: change a score, tick/untick hard stop, edit keywords, or add a row
-  for a new fact type. The page shows a before/after preview of every stock's signal.
-* **Weights & thresholds**: source reliability, decay half-life, Bullish/Bearish cut-offs.
-* **Investor lists**: funds you trust (`credible`) and entities you treat as operators
-  (`avoid`). Bulk deals are re-classified against these lists instantly.
-* Every save backs up the previous file to `config/backups/`.
+---
 
-After adding new fact types or keywords, press **Re-extract all** on the Sources page
-(or `python ingest.py --reextract`) so old items get the new types.
+## 8. Sources
 
-## Resources included
+All are in `config/sources.yaml`; search for `TODO(YOU)` to find spots needing your input.
 
-All are in `config/sources.yaml`, switched off until you enable them. Search that file
-for `TODO(YOU)` to see every spot that needs your input.
+| Data | Source |
+|---|---|
+| Daily prices | Yahoo Finance (yfinance); NSE bhavcopy fallback |
+| P/E, P/B, ROE, market cap | Yahoo Finance (thin for SMEs) |
+| Holders above 1% | NSE shareholding XBRL files |
+| Fund portfolios | Monthly fund house files (`amfi_fund_portfolios`) |
+| Deals, insider, SAST | NSE / BSE |
+| Announcements, compliance calendar | NSE SME, BSE (add your BSE `scrip_codes`) |
+| Concalls | Exchange announcements, company IR pages, AlphaStreet |
+| News | Google News RSS per company and per tracked investor, Moneycontrol, ET, CNBC-TV18, ValuePickr, Zerodha Chatter |
+| Macro | FRED, rbi.org.in, RBI and Fed RSS |
+| Paid / login (placeholders) | Trendlyne, Screener.in, Tijori, Researchbytes, Morningstar |
 
-| Resource | Entry in sources.yaml | Status |
-|---|---|---|
-| NSE SME announcements (incl. IPO anchor / allotment notices) | `nse_sme_announcements` | Ready |
-| NSE bulk deals / block deals | `nse_bulk_deals`, `nse_block_deals` | Ready |
-| NSE insider trading (PIT) | `nse_insider_trading` | Ready |
-| NSE SAST Reg 29 | `nse_sast_reg29` | Ready |
-| NSE SME shareholding pattern | `nse_sme_shareholding` | Ready |
-| NSE SME compliance / event calendar | `nse_sme_compliance_calendar` | Ready |
-| BSE announcements | `bse_announcements` | Ready; add your BSE SME `scrip_codes` |
-| BSE SME bulk deals | `bse_sme_bulk_deals` (page) or `bse_sme_bulk_deals_csv` (download) | Ready |
-| Chittorgarh SME IPO pages | `chittorgarh_sme_ipo_pages` | Add the IPO page URLs you track |
-| AMFI / fund house monthly portfolios | `amfi_fund_portfolios` | Add file, fund name, month, ISIN→symbol map |
-| PMS / AIF quarterly letters | `pms_aif_letters` | Add each fund's letters URL |
-| Company investor-relations pages | `company_ir_pages` | Add company URLs |
-| ValuePickr | `valuepickr_latest` | Ready; fill `company_aliases` |
-| Zerodha The Chatter, AlphaStreet India | `zerodha_the_chatter`, `alphastreet_india` | Ready; check the feed URL once |
-| PMS Bazaar, SOIC (YouTube) | `pms_bazaar_youtube`, `soic_youtube` | Add the channel ID |
-| Moneycontrol, ET Markets / ET Now, CNBC-TV18 | `moneycontrol_markets`, `et_markets`, `cnbctv18_market` | Ready; check the feed URL once |
-| Trendlyne, Screener.in, Tijori, Researchbytes, Morningstar | `trendlyne_superstars`, `screener_in`, `tijori_finance`, `researchbytes`, `morningstar_india` | Paid / login: placeholders for you to complete |
-
-I could not reach these sites from where I built this, so feed URLs marked `check` in
-sources.yaml are best-known addresses. If one fails, open the site, find its RSS link,
-and paste it in. The web adapters (`rss`, `web_page`) obey each site's robots.txt.
-
-## Adding a paid source
-
-Use only what your subscription and the site's terms allow. Pick one of two ways:
-
-**A) Export a file (simplest).** Download a CSV/Excel from the site, save it in
-`data/imports/`, and in `config/sources.yaml` change that entry to:
-
-```yaml
-  trendlyne_superstars:
-    adapter: csv_import
-    enabled: true
-    path: data/imports/trendlyne_superstars.csv   # your file
-    kind: deal                                    # rows are buys/sells by an investor
-    source_type: manual
-    columns: {symbol: "NSE Code", client: "Investor", side: "Action",
-              qty: "Shares", price: "Price", date: "Date"}   # your file's headers
-```
-
-**B) Use their API.**
-1. Copy `portal/sources/paid_template.py` to e.g. `portal/sources/trendlyne.py`.
-2. In the copy, change `@register("paid_template")` to `@register("trendlyne")` and fill
-   each `TODO(YOU)` block: auth header, where the rows are, field mapping.
-3. Put your key in an environment variable, e.g. Windows `setx TRENDLYNE_API_KEY "..."`
-   (then open a new window), macOS/Linux `export TRENDLYNE_API_KEY=...`.
-4. In `sources.yaml` set `adapter: trendlyne`, `url:` to the API endpoint,
-   `api_key_env: TRENDLYNE_API_KEY`, `enabled: true`.
-5. Test it alone: `python ingest.py --source trendlyne_superstars`.
-
-## Adding other resources
-
-**Without code** — add an entry to `config/sources.yaml`:
-
-```yaml
-  my_news:
-    adapter: rss                 # any RSS/Atom feed: news site, blog, YouTube channel
-    enabled: true
-    url: https://example.com/rss
-    source_type: news            # sets its reliability weight
-    require_symbol_match: true   # keep only items mentioning a watchlist stock / alias
-
-  bse_sme_bulk:
-    adapter: csv_import          # any CSV file or URL: BSE SME bulk deals, Trendlyne export...
-    enabled: true
-    path: data/imports/bse_sme_bulk.csv
-    kind: deal
-    source_type: exchange_deal
-    columns: {symbol: "Scrip Code", client: "Client Name", side: "Deal Type",
-              qty: "Quantity", price: "Price", date: "Deal Date"}
-```
-
-For news matching, fill `settings.watchlist` and `settings.company_aliases`.
-
-**With code** — create `portal/sources/my_site.py`:
+### Adding a source
+**No code:** add an entry to `sources.yaml` with `adapter: rss` (any feed) or `adapter: csv_import`
+(any CSV file or URL; map columns with `columns:`). **With code:** create `portal/sources/my_site.py`:
 
 ```python
 from .base import RawItem, SourceAdapter, register
@@ -272,58 +288,65 @@ from .base import RawItem, SourceAdapter, register
 @register("my_site")
 class MySite(SourceAdapter):
     source_type = "news"           # exchange_filing / exchange_deal / news / forum / manual
-
     def fetch(self):
-        data = self.get(self.cfg["url"]).json()     # self.get waits between requests
-        for row in data:
+        for row in self.get(self.cfg["url"]).json():      # self.get rate-limits
             yield RawItem(source=self.name, source_type=self.source_type,
-                          external_id=row["id"], symbol=row["symbol"],
-                          title=row["headline"], body=row["text"],
-                          source_url=row["link"], published_at=row["date"], raw=row)
+                          external_id=row["id"], symbol=row["symbol"], title=row["headline"],
+                          body=row["text"], source_url=row["link"],
+                          published_at=row["date"], raw=row)
 ```
+It is picked up automatically; set `adapter: my_site` in `sources.yaml`. Paid sources: copy
+`portal/sources/paid_template.py` and fill the `TODO(YOU)` blocks, keep the key in an env var or
+`api_keys.yaml`, and test with `python ingest.py --source NAME`. Use only what your subscription allows.
 
-It is picked up automatically; add `adapter: my_site` to `sources.yaml`. If your source
-already gives clean structured data, attach facts directly with
-`facts=[{"fact_type": "order_win", "summary": "...", "evidence": "..."}]` to skip extraction.
+### Checking a source
+On the Stock page open any fact under **Check the sources**: original link, publish and fetch
+time, content hash, raw record, and who extracted it. **Re-fetch and verify** downloads the document
+again and compares hashes. `settings.fetch_documents: true` stores filing PDFs' hashes and gives
+Claude the full PDF text.
 
-## Checking a source
+### Notes on the exchange sites
+NSE and BSE block heavy scraping: one request at a time with a 3 s gap (`request_delay_seconds`);
+do not lower it much. The endpoints are unofficial and change without notice; if a source errors,
+find the new request URL in the browser's Network tab and put it in that source's `url:`.
+SME companies report half-yearly, so data is sparse; defaults use a 90-day half-life and 365-day look-back.
 
-On the Signals page, click a stock, then open any fact under **Check the sources**:
-original link, publish and fetch time, content hash of the record as fetched, the raw
-record, and who extracted the fact (rules, Claude, or structured parsing).
-**Re-fetch and verify** downloads the document again and compares its hash. Turn on
-`settings.fetch_documents: true` to download filing PDFs at ingest time; that stores a
-document hash and gives Claude the full PDF text instead of just the headline.
+---
 
-## Notes on the exchange sites
+## 9. Known gaps
 
-* NSE and BSE block heavy scraping. Adapters make one request at a time with a 3-second
-  gap (`request_delay_seconds`). Don't lower it much, and run ingest once or twice a day.
-* The endpoints are the public APIs behind nseindia.com and bseindia.com pages. They change
-  without notice. If a source shows an error on the Sources page, open the matching page on
-  the exchange site, find the new request in the browser's Network tab, and put the URL in
-  that source's `url:` setting (placeholders `{from}` / `{to}` are filled in).
-* BSE's announcement API has no SME filter, so list your BSE SME `scrip_codes`.
-* SME companies report half-yearly, so shareholding and results data is sparse; the
-  defaults use a 90-day half-life and a 365-day look-back for that reason.
+* **`holders.pct` is empty.** In the local database every row in `holders` has `pct` NULL: the XBRL
+  parser (`parse_shareholding_xbrl` in `portal/market.py`) guesses field names that do not match, so
+  holdings above 1% have no sizes and tracked-investor scoring has less to work with.
+* NSE's insider-trading (PIT) endpoint has returned no rows after early May 2026 (DalalOS insider
+  data can cover BSE-listed companies).
+* BSE-only SME stocks have no holder parsing. BSE bulk deals need CSV import (BSE's page is JavaScript-rendered).
+* DalalOS has no shareholding data for the SME stocks tested.
+* Yahoo is often missing or thin for SME stocks.
 
-## Project layout
+---
 
-```
-app.py                     Streamlit dashboard (Signals, Scorecard rules, Sources, All items)
-config/scorecard.yaml      all scoring rules
-config/sources.yaml        sources, watchlist, extraction settings
-config/investors.yaml      tracked investors / fund managers and their aliases
-portal/investors.py        investor matching, portfolios, changes
-portal/sources/            one file per adapter; auto-registered
-portal/sources/paid_template.py  template for paid / login sources (TODO(YOU) markers)
-portal/extract.py          Claude + keyword fact extraction
-portal/scoring.py          scoring, decay, hard stops, signal
-ingest.py                  CLI: python ingest.py [--source NAME] [--reextract] [--market-only] [--add SYM ...]
-portal/market.py           prices, fundamentals, macro, holders (XBRL)
-portal/insights.py         stock page data + final Buy/Hold/Sell scorecard
-run.bat / dashboard.bat    Windows: set up + fetch + open / open only
-portal/ingest.py           ingest logic
-portal/db.py               SQLite schema (data/portal.db)
-tests/                     python -m pytest tests
-```
+## 10. How it can be improved
+
+**Data quality**
+1. Fix the XBRL holder parsing so `holders.pct` is filled (inspect a real NSE shareholding XBRL and map the actual element names); add a test with a saved sample file.
+2. Use DalalOS `get_stock_events`, `get_financials`, `get_peer_comparison` and `get_delivery_trends` for fundamentals and delivery data where Yahoo is thin (mainboard names first).
+3. Use DalalOS deals and insider trades as a fallback source to cover the dead NSE PIT feed and BSE deals.
+4. Backfill DalalOS data for the whole watchlist, not only the symbols fetched so far.
+
+**Automation**
+5. Check whether DalalOS offers a plain API key and endpoint; if so, call it from an adapter in `portal/sources/` so ingest refreshes it automatically with no Claude session.
+6. Schedule `update.bat` (ingest + publish) daily, or move ingest to GitHub Actions so the snapshot refreshes without your PC.
+7. Add a hosted-mode "Refresh data" button that clears the snapshot cache and re-pulls on demand.
+
+**Product**
+8. Show DalalOS institutional data on the Stock page, and feed FII/DII/MF changes into the final score.
+9. Alerts (email / Telegram) for new fund entries, big bulk deals, pledge increases.
+10. Backtest the scorecard against past price moves to tune weights and thresholds.
+
+**Engineering**
+11. Add `pytest` to a dev requirements file and run tests in CI (GitHub Actions) on every push.
+12. Replace deprecated `use_container_width` with `width="stretch"` in Streamlit calls.
+13. Split the ~800-line `app.py` into one module per page.
+14. Publish only the tables the cloud app needs, so the snapshot is smaller, and consider a private repo plus `GITHUB_TOKEN` since the snapshot holds all your data.
+15. Add schema migrations for `portal/db.py` instead of relying on `CREATE TABLE IF NOT EXISTS` alone.
