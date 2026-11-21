@@ -1,6 +1,7 @@
 """SME signal portal dashboard.  Run:  streamlit run app.py"""
 import copy
 import json
+import os
 
 import pandas as pd
 import requests
@@ -20,6 +21,23 @@ from portal.sources import REGISTRY
 from portal.sources.base import sha256_bytes
 
 st.set_page_config(page_title="SME Signal Portal", page_icon="📈", layout="wide")
+
+HOSTED = bool(os.environ.get("PORTAL_HOSTED"))   # set on Streamlit Cloud: read-only viewer of the published snapshot
+
+
+@st.cache_resource(ttl=3600)
+def ensure_data():
+    """Hosted: download the latest published snapshot at start and re-check every hour."""
+    if HOSTED:
+        import sync_data
+        try:
+            sync_data.pull()
+        except SystemExit as e:
+            st.error("Could not download the data snapshot: %s" % e)
+    return True
+
+
+ensure_data()
 
 SIGNAL_ICON = {"Bullish": "🟢 Bullish", "Neutral": "⚪ Neutral", "Bearish": "🔴 Bearish", "Avoid": "⛔ Avoid"}
 
@@ -773,6 +791,7 @@ PAGES = {"Watchlist": page_watchlist, "SME universe": page_universe, "Stock": pa
 if "page" in st.session_state and st.session_state["page"] in PAGES:
     st.session_state["nav"] = st.session_state.pop("page")
 choice = st.sidebar.radio("Go to", list(PAGES), key="nav")
-sidebar_fetch()
+if not HOSTED:
+    sidebar_fetch()
 st.sidebar.caption("For personal research only. Not investment advice. Check every source yourself.")
 PAGES[choice]()

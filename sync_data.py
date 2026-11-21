@@ -50,7 +50,12 @@ def publish():
 
 
 def pull():
-    git("fetch", "-q", "--depth", "1", "origin", BRANCH)
+    remote = "origin"
+    tok = os.environ.get("GITHUB_TOKEN")      # only needed when the repo is private (hosted app)
+    if tok:
+        u = git("remote", "get-url", "origin").stdout.decode().strip()
+        remote = u.replace("https://", "https://x-access-token:%s@" % tok, 1)
+    git("fetch", "-q", "--depth", "1", remote, BRANCH)
     blob = git("show", "FETCH_HEAD:" + NAME).stdout
     DB.parent.mkdir(exist_ok=True)
     if DB.exists():
