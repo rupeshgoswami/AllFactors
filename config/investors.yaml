@@ -1,0 +1,232 @@
+# Tracked investors: people, fund houses, PMS / AIFs whose moves you want to follow.
+# Edit freely, or use the "Top investors" page. Names are matched (case-insensitive) against
+# holder names in shareholding filings, bulk/block deals, SAST and insider filings, fund
+# portfolios and news. Add every spelling and holding entity you know to `aliases`.
+#
+# The starting list is well-known names from public coverage. CHECK the aliases yourself:
+# family members and holding companies change, and a short alias can match the wrong entity.
+#
+# type: individual | pms_aif | mutual_fund | fpi | sme_anchor
+# credible: true  -> their buys count as "credible investor" in the scorecard
+# manager: optional, the fund manager most associated with it (people move: verify)
+
+investors:
+  # ---------------- Individual investors ----------------
+  - name: Ashish Kacholia
+    type: individual
+    credible: true
+    aliases: [Ashish Kacholia, Ashish Rameshchandra Kacholia]
+  - name: Vijay Kedia
+    type: individual
+    credible: true
+    aliases: [Vijay Kedia, Vijay Kishanlal Kedia, Kedia Securities]
+  - name: Mukul Agrawal
+    type: individual
+    credible: true
+    aliases: [Mukul Agrawal, Mukul Mahavir Agrawal, Mukul Mahavir Prasad Agrawal, Param Capital]
+  - name: Dolly Khanna
+    type: individual
+    credible: true
+    aliases: [Dolly Khanna, Dolly Rajiv Khanna, Rajiv Khanna]
+  - name: Radhakishan Damani
+    type: individual
+    credible: true
+    aliases: [Radhakishan Damani, Radhakishan Shivkishan Damani, Derive Trading, Bright Star Investments]
+  - name: Rekha Jhunjhunwala (Rare Enterprises)
+    type: individual
+    credible: true
+    aliases: [Rekha Jhunjhunwala, Rekha Rakesh Jhunjhunwala, Rakesh Jhunjhunwala, Rare Enterprises]
+  - name: Porinju Veliyath
+    type: individual
+    credible: true
+    aliases: [Porinju Veliyath, Porinju V Veliyath, Equity Intelligence India]
+  - name: Madhusudan Kela
+    type: individual
+    credible: true
+    aliases: [Madhusudan Kela, Madhusudan Murlidhar Kela, Madhuri Madhusudan Kela, Singularity Equity Fund]
+  - name: Ashish Dhawan
+    type: individual
+    credible: true
+    aliases: [Ashish Dhawan]
+  - name: Anil Kumar Goel
+    type: individual
+    credible: true
+    aliases: [Anil Kumar Goel, Seema Goel]
+  - name: Sunil Singhania (Abakkus)
+    type: pms_aif
+    credible: true
+    manager: Sunil Singhania
+    aliases: [Sunil Singhania, Abakkus]
+  - name: Akash Bhanshali
+    type: individual
+    credible: true
+    aliases: [Akash Bhanshali, Akash Prakash Bhanshali]
+  - name: Nemish Shah (ENAM)
+    type: individual
+    credible: true
+    aliases: [Nemish Shah, Nemish S Shah, ENAM Securities, ENAM Holdings]
+  - name: Satpal Khattar
+    type: individual
+    credible: true
+    aliases: [Satpal Khattar, Khattar Holdings]
+
+  # ---------------- PMS / AIF ----------------
+  - name: Marcellus Investment Managers
+    type: pms_aif
+    credible: true
+    manager: Saurabh Mukherjea
+    aliases: [Marcellus]
+  - name: Carnelian Asset Management
+    type: pms_aif
+    credible: true
+    manager: Vikas Khemani
+    aliases: [Carnelian]
+  - name: Helios Capital
+    type: pms_aif
+    credible: true
+    manager: Samir Arora
+    aliases: [Helios Capital, Helios India]
+  - name: Old Bridge Capital
+    type: pms_aif
+    credible: true
+    manager: Kenneth Andrade
+    aliases: [Old Bridge]
+  - name: 3P Investment Managers
+    type: pms_aif
+    credible: true
+    manager: Prashant Jain
+    aliases: [3P India Equity, 3P Investment]
+  - name: Negen Capital
+    type: pms_aif
+    credible: true
+    manager: Neil Bahal
+    aliases: [Negen Capital, Negen Undiscovered]
+  - name: ValueQuest
+    type: pms_aif
+    credible: true
+    aliases: [ValueQuest, Value Quest]
+  - name: Ambit
+    type: pms_aif
+    credible: true
+    aliases: [Ambit Investment, Ambit Global Private Client, Ambit Coffee Can]
+  - name: Alchemy Capital
+    type: pms_aif
+    credible: true
+    aliases: [Alchemy Capital]
+  - name: Unifi Capital
+    type: pms_aif
+    credible: true
+    aliases: [Unifi Capital, Unifi AIF]
+  - name: Aequitas Investment
+    type: pms_aif
+    credible: true
+    aliases: [Aequitas]
+  - name: White Oak Capital
+    type: pms_aif
+    credible: true
+    manager: Prashant Khemka
+    aliases: [White Oak, Whiteoak]
+  - name: Motilal Oswal (PMS / AIF / MF)
+    type: pms_aif
+    credible: true
+    manager: Raamdeo Agrawal
+    aliases: [Motilal Oswal]
+
+  # ---------------- Mutual fund houses ----------------
+  - name: SBI Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [SBI Mutual Fund, SBI Small Cap, SBI Funds Management, SBI Magnum]
+  - name: HDFC Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [HDFC Mutual Fund, HDFC Small Cap, HDFC Trustee]
+  - name: ICICI Prudential Mutual Fund
+    type: mutual_fund
+    credible: true
+    manager: S Naren
+    aliases: [ICICI Prudential]
+  - name: Nippon India Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Nippon Life India, Nippon India]
+  - name: Kotak Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Kotak Mahindra Trustee, Kotak Small Cap, Kotak Emerging]
+  - name: Axis Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Axis Mutual Fund, Axis Small Cap]
+  - name: DSP Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [DSP Small Cap, DSP Mutual Fund, DSP Trustee]
+  - name: Quant Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Quant Mutual Fund, Quant Small Cap]
+  - name: Tata Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Tata Mutual Fund, Tata Small Cap]
+  - name: Bandhan Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Bandhan Mutual Fund, Bandhan Small Cap]
+  - name: Mirae Asset Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Mirae Asset]
+  - name: Franklin Templeton Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Franklin India, Franklin Templeton]
+  - name: Aditya Birla Sun Life Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Aditya Birla Sun Life]
+  - name: Invesco Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Invesco India]
+  - name: Canara Robeco Mutual Fund
+    type: mutual_fund
+    credible: true
+    aliases: [Canara Robeco]
+  - name: PPFAS Mutual Fund
+    type: mutual_fund
+    credible: true
+    manager: Rajeev Thakkar
+    aliases: [Parag Parikh, PPFAS]
+
+  # ---------------- Frequent SME IPO anchor investors ----------------
+  # Seen often in SME anchor books. Tracked for information only (credible: false):
+  # check each one's record yourself before treating their entry as a positive signal.
+  - name: Saint Capital Fund
+    type: sme_anchor
+    credible: false
+    aliases: [Saint Capital Fund]
+  - name: Nav Capital VCC
+    type: sme_anchor
+    credible: false
+    aliases: [Nav Capital]
+  - name: Leading Light Fund VCC
+    type: sme_anchor
+    credible: false
+    aliases: [Leading Light Fund]
+  - name: Minerva Ventures Fund
+    type: sme_anchor
+    credible: false
+    aliases: [Minerva Ventures]
+  - name: Craft Emerging Market Fund
+    type: sme_anchor
+    credible: false
+    aliases: [Craft Emerging Market]
+
+  # ---------------- TODO(YOU) ----------------
+  # Add investors you follow, e.g.:
+  # - name: My favourite PMS
+  #   type: pms_aif
+  #   credible: true
+  #   aliases: [Exact Name As In Filings, Its Holding Company]

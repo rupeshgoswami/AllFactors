@@ -1,0 +1,277 @@
+# Scorecard rules. Edit here or on the "Scorecard rules" page of the dashboard.
+# Changes apply immediately: scores are recomputed from stored facts every time you
+# open the dashboard, so you never need to re-fetch or re-extract.
+
+# How much each kind of source counts (multiplies every fact's score).
+source_reliability:
+  exchange_filing: 1.0   # NSE/BSE filings
+  exchange_deal: 1.0     # bulk / block deals
+  manual: 0.9            # your own CSV imports
+  news: 0.6
+  forum: 0.3             # ValuePickr, social media
+  macro: 0               # RBI / Fed news; affects all stocks through macro_rules instead
+
+# Older facts count less. A fact half_life_days old counts half.
+decay:
+  half_life_days: 90
+  lookback_days: 365     # facts older than this are ignored
+
+# Signal thresholds on the decayed, weighted total.
+signals:
+  bullish_at: 5          # total >= this -> Bullish
+  bearish_at: -3         # total <= this -> Bearish
+  # Any hard-stop fact inside its window forces "Avoid", whatever the total.
+  hard_stop_window_days: 365
+
+# Fact types. `score` is from -5 to +5. `hard_stop: true` forces Avoid.
+# `keywords` are used by the rule-based extractor (and as hints for Claude).
+# `description` tells Claude when to use this type. You can add new types freely.
+fact_types:
+  promoter_open_market_buy:
+    label: Promoter buys in open market
+    score: 4
+    description: A promoter or promoter group entity buys shares in the open market.
+    keywords: []
+  promoter_stake_increase:
+    label: Promoter stake up (filing)
+    score: 2
+    description: Promoter holding rises between shareholding filings or via preferential/warrant conversion.
+    keywords: [conversion of warrants to promoter]
+  promoter_sell:
+    label: Promoter sells
+    score: -3
+    description: A promoter or promoter group entity sells shares.
+    keywords: [offer for sale by promoter]
+  promoter_stake_decrease:
+    label: Promoter stake down (filing)
+    score: -2
+    description: Promoter holding falls between shareholding filings.
+    keywords: []
+  promoter_pledge:
+    label: Promoter pledges shares
+    score: -5
+    hard_stop: true
+    description: Promoter creates or increases a pledge or encumbrance on shares.
+    keywords: [creation of pledge, pledge creation, encumbrance created]
+  pledge_released:
+    label: Pledge released
+    score: 2
+    description: Promoter pledge is revoked or released.
+    keywords: [release of pledge, revocation of pledge, pledge released]
+  insider_buy:
+    label: Director / KMP buys
+    score: 1.5
+    description: A non-promoter insider (director, KMP) buys shares.
+    keywords: []
+  insider_sell:
+    label: Director / KMP sells
+    score: -1
+    description: A non-promoter insider sells shares.
+    keywords: []
+  credible_investor_buy:
+    label: Credible fund / investor buys
+    score: 3
+    description: A fund, AIF, PMS or investor on your credible list buys in a bulk/block deal or crosses a disclosure threshold.
+    keywords: []
+  credible_investor_sell:
+    label: Credible fund / investor sells
+    score: -3
+    description: A fund or investor on your credible list sells or exits.
+    keywords: []
+  unknown_bulk_buy:
+    label: Unrecognised bulk buyer
+    score: 0.5
+    description: A bulk/block buy by an entity not on any of your lists.
+    keywords: []
+  unknown_bulk_sell:
+    label: Unrecognised bulk seller
+    score: -0.5
+    description: A bulk/block sell by an entity not on any of your lists.
+    keywords: []
+  flagged_entity_buy:
+    label: Flagged entity buys (operator risk)
+    score: -2
+    description: An entity on your avoid list buys; possible operator activity.
+    keywords: []
+  flagged_entity_sell:
+    label: Flagged entity sells
+    score: -1
+    description: An entity on your avoid list sells.
+    keywords: []
+  order_win:
+    label: Order win / new contract
+    score: 2
+    description: Company announces a new order, contract, LOI or work order.
+    keywords: [receipt of order, order worth, bagged order, work order, letter of intent, purchase order, new contract]
+  capacity_expansion:
+    label: Capacity expansion / capex
+    score: 1.5
+    description: New plant, capacity addition or capex approved.
+    keywords: [expansion of manufacturing capacity, capacity expansion, new plant, capex of, commissioning of]
+  results_strong:
+    label: Strong results
+    score: 2
+    description: Half-yearly or annual results with clear revenue and profit growth.
+    keywords: [pat up, profit grew, revenue grew, margin expanded, highest ever]
+  results_weak:
+    label: Weak results
+    score: -2
+    description: Results with falling revenue, losses, or deteriorating working capital.
+    keywords: [net loss, revenue declined, profit declined, margin contracted]
+  migration_to_mainboard:
+    label: Migration to main board
+    score: 3
+    description: Company applies for or receives approval to migrate from SME to the main board.
+    keywords: [migration to main board, migration of equity shares, migrate to the main board, migration to nse main board, migration to bse main board]
+  lock_in_expiry:
+    label: Lock-in expiry (supply overhang)
+    score: -1.5
+    description: Promoter or anchor lock-in ends, adding potential supply.
+    keywords: [lock-in expiry, lock in expiry, expiry of lock-in, lock-in on shares]
+  fund_raise:
+    label: Preferential issue / fund raise
+    score: 0.5
+    description: Preferential allotment, warrants, QIP or rights issue. Positive if to credible investors at a premium.
+    keywords: [preferential issue, preferential allotment, issue of warrants, rights issue]
+  rating_upgrade:
+    label: Credit rating upgrade
+    score: 2
+    description: Credit rating upgraded or outlook improved.
+    keywords: [rating upgrade, upgraded the rating, upgraded the long-term]
+  rating_downgrade:
+    label: Credit rating downgrade
+    score: -3
+    description: Credit rating downgraded, outlook negative, or issuer not cooperating.
+    keywords: [downgraded, rating downgrade, issuer not cooperating]
+  debt_default:
+    label: Default / delay in debt servicing
+    score: -5
+    hard_stop: true
+    description: Default or delay in paying interest or principal, or NPA classification.
+    keywords: [default in payment, delay in debt servicing, delays in debt servicing, classified as npa, default on]
+  auditor_resignation:
+    label: Auditor resigns
+    score: -5
+    hard_stop: true
+    description: Statutory auditor resigns mid-term, especially citing lack of information.
+    keywords: [resignation of statutory auditor, resigned as statutory auditor, auditor has resigned]
+  kmp_resignation:
+    label: CFO / CEO / director resigns
+    score: -2
+    description: CFO, CEO, MD, company secretary or independent director resigns.
+    keywords: [resignation of chief financial officer, resignation of cfo, resignation of independent director, resignation of managing director]
+  regulatory_action:
+    label: SEBI / regulatory action
+    score: -5
+    hard_stop: true
+    description: SEBI order, exchange suspension, ASM/GSM surveillance stage, forensic audit, raid or fraud allegation.
+    keywords: [sebi order, interim order, forensic audit, suspension of trading, graded surveillance, income tax search, raid]
+  related_party_concern:
+    label: Related-party concern
+    score: -3
+    description: Large or unusual related-party transactions, loans to promoter entities.
+    keywords: [loan to promoter, related party transaction of material]
+  mf_new_entry:
+    label: Fund adds a new position
+    score: 2.5
+    description: A mutual fund / PMS portfolio disclosure shows the stock for the first time.
+    keywords: []
+  mf_added:
+    label: Fund adds to position
+    score: 1
+    description: A fund's monthly holding rises by more than the threshold.
+    keywords: []
+  mf_cut:
+    label: Fund cuts position
+    score: -1.5
+    description: A fund's monthly holding falls by more than the threshold.
+    keywords: []
+  mf_holding:
+    label: Fund still holds (no material change)
+    score: 0
+    description: Fund holding unchanged, or the first month on record for that fund.
+    keywords: []
+  ipo_anchor_book:
+    label: IPO anchor / allotment disclosed
+    score: 0.5
+    description: Anchor investor allocation or basis of allotment published. Check who the anchors are.
+    keywords: [anchor investor, basis of allotment, allocation to anchor]
+  upcoming_event:
+    label: Upcoming board meeting / results date
+    score: 0
+    description: Calendar entry for an upcoming results date, fund raise or AGM.
+    keywords: []
+  fund_manager_mention:
+    label: Fund manager names it as a holding / idea
+    score: 1
+    description: A fund letter, interview or podcast discusses the company positively as a holding.
+    keywords: []
+  fund_manager_negative:
+    label: Fund manager exits or flags concerns
+    score: -1.5
+    description: A fund letter or interview says the fund exited the stock or raises a concern.
+    keywords: []
+  concall:
+    label: Concall / investor presentation
+    score: 0
+    description: Earnings call, transcript or investor presentation filed. Summarise it on the stock page.
+    keywords: [con call, concall, conference call, earnings call, transcript, investor presentation, analyst meet]
+  routine:
+    label: Routine / no signal
+    score: 0
+    description: Routine filings with no investment signal (board meeting notices, trading window, newspaper ads).
+    keywords: [intimation of board meeting, trading window, newspaper publication, closure of trading window]
+
+# Fund portfolio change that counts as "added" or "cut" (percent change in quantity).
+fund_holding_change_threshold_pct: 10
+
+# Names to recognise in bulk/block deals and filings (case-insensitive substring match).
+investor_lists:
+  credible:
+    - Example Small Cap Fund     # demo entry; replace with funds you trust
+    - Example Value PMS          # demo entry
+  avoid: []                      # entities you consider operators
+
+# ---------------------------------------------------------------------------------
+# FINAL BUY / HOLD / SELL SCORECARD
+# total = facts score x weights.facts + momentum x weights.momentum
+#       + valuation x weights.valuation + macro x weights.macro
+# Any hard stop above forces "Avoid".
+final_scorecard:
+  weights: {facts: 1.0, momentum: 1.0, valuation: 1.0, tracked_investors: 1.0, macro: 1.0}
+  thresholds: {buy_at: 6, sell_at: -3}
+  momentum:
+    above_200dma: 1
+    below_200dma: -1
+    strong_3m_return_pct: 15
+    strong_3m_score: 1
+    weak_3m_return_pct: -15
+    weak_3m_score: -1
+  valuation:                 # P/E compared with the median of the peers you list on the Watchlist page
+    cheap_vs_peers_pct: 20   # P/E this % below peer median -> cheap_score
+    cheap_score: 1
+    expensive_vs_peers_pct: 50
+    expensive_score: -1
+
+  tracked_investors:          # moves by investors in config/investors.yaml, latest shareholding filing
+    new_entry: 2              # only investors marked credible: true count for new_entry / increased
+    increased: 1
+    decreased: -1
+    exited: -2
+
+# Buys by investors marked credible in config/investors.yaml count as credible_investor_buy.
+use_tracked_investors_as_credible: true
+
+# Macro rules: added to every stock's total when they fire. Series come from the
+# Macro page: US10Y, FED_FUNDS_UPPER, USDINR, BRENT, INDIA10Y, RBI_REPO.
+# Conditions: change_above / change_below (points), pct_change_above / pct_change_below,
+# level_above / level_below, measured over change_days.
+macro_rules:
+  - {label: RBI cut the repo rate, series: RBI_REPO, change_days: 120, change_below: -0.1, score: 1}
+  - {label: RBI raised the repo rate, series: RBI_REPO, change_days: 120, change_above: 0.1, score: -1}
+  - {label: Fed cut rates, series: FED_FUNDS_UPPER, change_days: 120, change_below: -0.1, score: 0.5}
+  - {label: Fed raised rates, series: FED_FUNDS_UPPER, change_days: 120, change_above: 0.1, score: -0.5}
+  - {label: US 10Y yield up sharply, series: US10Y, change_days: 60, change_above: 0.4, score: -0.5}
+  - {label: US 10Y yield down sharply, series: US10Y, change_days: 60, change_below: -0.4, score: 0.5}
+  - {label: Rupee weakened over 3%, series: USDINR, change_days: 90, pct_change_above: 3, score: -0.5}
+  - {label: Crude up over 20%, series: BRENT, change_days: 90, pct_change_above: 20, score: -0.5}

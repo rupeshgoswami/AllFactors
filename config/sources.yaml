@@ -1,0 +1,290 @@
+# Data sources. Each entry names an adapter (a Python class in portal/sources/).
+# Turn a source on with `enabled: true`. Lines marked  TODO(YOU)  need your input.
+#
+# Free sources that need no input are ON. Ones that need a URL or file from you are OFF.
+# Paid / login-only sources are placeholders at the bottom: see "PAID OR LOGIN-ONLY".
+# URLs of feeds and site APIs change; if a source errors, open the site, find the new
+# URL and paste it into that entry's `url:`.
+
+settings:
+  request_delay_seconds: 3      # wait between requests to a site; keep this polite
+  match_all_sme: true           # tag news / forum posts with ANY NSE SME company named in them (not just the watchlist)
+  watchlist: []                 # TODO(YOU) optional: e.g. [ABCSME, XYZLTD]; empty = all SME stocks
+  company_aliases: {}           # TODO(YOU) for news/forum matching, e.g. {ABCSME: ["ABC Foods", "ABC Food Products"]}
+  fetch_documents: false        # true = download filing PDFs, store their hash, give their text to Claude
+
+extraction:
+  use_claude: auto              # auto = use Claude when ANTHROPIC_API_KEY is set; true / false to force
+  model: claude-opus-5-5
+  effort: low
+  max_body_chars: 20000
+
+# Prices, fundamentals, macro and named holders. Run for stocks on the Watchlist page.
+market_data:
+  prices: true                  # Yahoo Finance daily prices (yfinance); NSE price history as fallback
+  price_history_years: 3
+  fundamentals: true            # Yahoo Finance P/E, P/B, ROE, market cap... (thin for some SMEs)
+  macro: true                   # FRED: US 10Y, Fed funds, USD/INR, Brent, India 10Y; RBI repo rate
+  holders: true                 # named holders >1% parsed from NSE shareholding XBRL files
+  holders_scope: all_sme        # all_sme = every SME stock (needed for investor portfolios); watchlist = only yours
+  universe: all_sme             # all_sme = prices + fundamentals for EVERY NSE SME stock; watchlist = only yours + peers
+  price_batch_size: 40          # tickers per Yahoo download call
+  fundamentals_max_per_run: 250 # Yahoo is one request per stock; the rest continues on the next run
+  fundamentals_refresh_days: 7  # re-fetch a stock's fundamentals after this many days
+  nse_fallback_max: 25          # stocks per run to try on NSE's own price history when Yahoo has none
+  holders_max_files_per_run: 150   # first backfill is spread over a few runs to stay polite
+  # macro_series:               # optional: replace the default list. Any FRED series id works.
+  #   US10Y: {fred: DGS10, label: US 10-year yield}
+
+sources:
+  demo:
+    adapter: demo
+    enabled: false              # FICTIONAL sample data. Turn on only to try the app offline.
+    notes: Fictional demo data.
+
+  # ===================== EXCHANGE DATA (free, implemented) =====================
+  nse_sme_announcements:
+    adapter: nse_announcements
+    enabled: true
+    lookback_days: 30
+    notes: NSE Emerge corporate announcements, incl. IPO anchor / allotment notices, results, orders.
+
+  nse_bulk_deals:
+    adapter: nse_bulk_deals
+    enabled: true
+    sme_only: true
+    notes: NSE bulk deals (trades over 0.5% of equity), filtered to Emerge symbols.
+
+  nse_block_deals:
+    adapter: nse_block_deals
+    enabled: true
+    sme_only: true
+    notes: NSE block deals, filtered to Emerge symbols.
+
+  nse_insider_trading:
+    adapter: nse_insider_trading
+    enabled: true
+    lookback_days: 14
+    sme_only: true
+    notes: SEBI PIT disclosures - promoter / director buys, sells, pledges.
+
+  nse_sast_reg29:
+    adapter: nse_sast
+    enabled: true
+    lookback_days: 90
+    sme_only: true
+    notes: SEBI SAST Reg 29 - someone crosses 5% or moves 2%+.
+
+  nse_sme_shareholding:
+    adapter: nse_shareholding
+    enabled: true
+    sweep_per_run: 60           # also fetch filing history for this many other SME stocks per run (0 = off); covers all ~580 over ~10 runs
+    notes: Half-yearly shareholding pattern; promoter % change vs previous filing.
+
+  nse_sme_compliance_calendar:
+    adapter: nse_event_calendar
+    enabled: true
+    notes: Upcoming SME board meetings / results dates (NSE event calendar).
+
+  bse_announcements:
+    adapter: bse_announcements
+    enabled: false
+    lookback_days: 3
+    scrip_codes: []             # TODO(YOU): BSE SME scrip codes to follow; empty = all of BSE (large volume)
+    max_pages: 5
+    notes: BSE corporate announcements. No SME filter on BSE's side, so list scrip codes.
+
+  bse_sme_bulk_deals:
+    adapter: bse_bulk_deals
+    enabled: false              # OFF: BSE now builds this page with JavaScript, so there is no table to read. Use the CSV entry below.
+    scrip_codes: []             # TODO(YOU): BSE SME scrip codes; empty = all BSE bulk deals
+    notes: BSE bulk deals page (HTML). If the layout changes, use the csv_import entry below.
+
+  bse_sme_bulk_deals_csv:
+    adapter: csv_import
+    enabled: false
+    path: data/imports/bse_bulk_deals.csv   # TODO(YOU): save BSE's bulk-deal CSV download here
+    kind: deal
+    source_type: exchange_deal
+    columns: {symbol: "Security Code", company: "Security Name", client: "Client Name",
+              side: "Deal Type", qty: "Quantity", price: "Price", date: "Deal Date"}
+    notes: Fallback - BSE bulk deals from a downloaded CSV. Match column names to the file's header.
+
+  # ===================== IPO (free) =====================
+  chittorgarh_sme_ipo_pages:
+    adapter: web_page
+    enabled: false
+    source_type: news
+    pages:                      # TODO(YOU): add one line per SME IPO you track (subscription, anchors, lock-in)
+      # - {url: "https://www.chittorgarh.com/ipo/<ipo-name>/<id>/", symbol: ABCSME}
+    notes: Chittorgarh SME IPO pages, watched for changes. robots.txt is honoured.
+
+  # ===================== MUTUAL FUND / PMS PORTFOLIOS (free) =====================
+  amfi_fund_portfolios:
+    adapter: mf_portfolio
+    enabled: false
+    fund_name: Example Small Cap Fund        # TODO(YOU): the fund this file belongs to
+    month: "2026-10"                         # TODO(YOU): portfolio month (YYYY-MM); update each month
+    files: [data/imports/example_smallcap_2026-10.xlsx]   # TODO(YOU): monthly portfolio file(s) or URL(s) from the fund house website
+    sheet: 0                                 # TODO(YOU): sheet name or number holding the equity table
+    header_row: 0                            # TODO(YOU): row number of the header (0 = first row)
+    columns: {company: "Name of the Instrument", isin: "ISIN", qty: "Quantity", pct: "% to Net Assets"}
+    symbol_map: {}                           # TODO(YOU): ISIN or name -> symbol, e.g. {INE123A01011: ABCSME}
+    only_mapped: true                        # keep only rows in symbol_map
+    notes: Monthly disclosures. Copy this entry once per fund. Shows entries before half-yearly SME filings do.
+
+  pms_aif_letters:
+    adapter: web_page
+    enabled: false
+    source_type: news
+    pages:                      # TODO(YOU): URL of each fund's letters page or letter PDF
+      # - {url: "https://<fund-website>/investor-letters", title: "Fund X letters"}
+    notes: PMS / AIF quarterly letters on each fund's own website. Claude extracts what they bought and why.
+
+  company_ir_pages:
+    adapter: web_page
+    enabled: false
+    source_type: exchange_filing
+    pages:                      # TODO(YOU): investor relations pages of companies you follow
+      # - {url: "https://<company-website>/investors", symbol: ABCSME}
+    notes: Concall audio links, transcripts and presentations many SMEs post only on their own site.
+
+  # ===================== CONCALLS, FORUMS, INTERVIEWS (free) =====================
+  valuepickr_latest:
+    adapter: rss
+    enabled: true
+    url: https://forum.valuepickr.com/latest.rss
+    source_type: forum
+    require_symbol_match: true
+    notes: ValuePickr latest posts (Discourse feed). Fill company_aliases so posts match stocks. For a single company thread use https://forum.valuepickr.com/t/<slug>/<id>.rss
+
+  zerodha_the_chatter:
+    adapter: rss
+    enabled: true
+    url: https://thechatter.zerodha.com/feed   # check: open it in a browser; if it 404s, find the feed link on the site
+    source_type: news
+    require_symbol_match: false
+    notes: Weekly roundup of management commentary.
+
+  alphastreet_india:
+    adapter: rss
+    enabled: true
+    url: https://alphastreet.com/india/feed/   # check: open in a browser; replace with the site's feed link if different
+    source_type: news
+    require_symbol_match: true
+    notes: Free earnings call transcripts and highlights.
+
+  pms_bazaar_youtube:
+    adapter: rss
+    enabled: false
+    url: https://www.youtube.com/feeds/videos.xml?channel_id=TODO   # TODO(YOU): channel ID (YouTube channel page > Share > Copy channel ID)
+    source_type: news
+    require_symbol_match: false
+    notes: PMS Bazaar fund manager interviews (video titles and descriptions).
+
+  soic_youtube:
+    adapter: rss
+    enabled: false
+    url: https://www.youtube.com/feeds/videos.xml?channel_id=TODO   # TODO(YOU): SOIC channel ID
+    source_type: news
+    require_symbol_match: false
+    notes: The SOIC podcast / YouTube interviews.
+
+  moneycontrol_markets:
+    adapter: rss
+    enabled: true
+    url: https://www.moneycontrol.com/rss/marketreports.xml   # check: see moneycontrol.com/rss for the current list
+    source_type: news
+    require_symbol_match: true
+    notes: Moneycontrol market news.
+
+  et_markets:
+    adapter: rss
+    enabled: true
+    url: https://economictimes.indiatimes.com/markets/stocks/rssfeeds/2146842.cms   # check: see economictimes.indiatimes.com/rss.cms
+    source_type: news
+    require_symbol_match: true
+    notes: Economic Times / ET Now stock news.
+
+  cnbctv18_market:
+    adapter: rss
+    enabled: false              # OFF: cnbctv18.com's robots.txt forbids this feed
+    url: https://www.cnbctv18.com/commonfeeds/v1/cne/rss/market.xml   # check: see cnbctv18.com/rss
+    source_type: news
+    require_symbol_match: true
+    notes: CNBC-TV18 market news.
+
+  # ===================== STOCK + INVESTOR NEWS (free, no key) =====================
+  google_news:
+    adapter: google_news
+    enabled: true
+    lookback_days: 14
+    max_stocks: 40              # stocks searched per run: watchlist first, then the rest of the SME list in rotation
+    max_per_query: 8
+    include_investors: true     # also search each investor in config/investors.yaml
+    notes: Google News RSS per company and per tracked investor. Free, no key.
+
+  # ===================== MACRO NEWS (free) =====================
+  rbi_press_releases:
+    adapter: rss
+    enabled: true
+    url: https://www.rbi.org.in/pressreleases_rss.xml   # check: rbi.org.in > RSS if this moves
+    source_type: macro
+    require_symbol_match: false
+    notes: RBI press releases incl. monetary policy statements. Shown on the Macro page.
+
+  fed_monetary_policy:
+    adapter: rss
+    enabled: true
+    url: https://www.federalreserve.gov/feeds/press_monetary.xml
+    source_type: macro
+    require_symbol_match: false
+    notes: US Federal Reserve FOMC statements. Shown on the Macro page.
+
+  # ===================== PAID OR LOGIN-ONLY (placeholders) =====================
+  # These do nothing until you complete them. Two ways to connect each one:
+  #  A) Export:  download a CSV/Excel from the site (allowed on your plan), save it under
+  #              data/imports/, change adapter to csv_import, map the columns.
+  #  B) API:     copy portal/sources/paid_template.py, fill its TODO(YOU) parts, and
+  #              set adapter / url / api_key_env here.
+  # Secrets go in environment variables, never in this file.
+
+  trendlyne_superstars:
+    adapter: paid_template      # TODO(YOU): your adapter name (B) or csv_import (A)
+    enabled: false
+    url: TODO                   # TODO(YOU): API endpoint or export URL from Trendlyne
+    api_key_env: TRENDLYNE_API_KEY   # TODO(YOU): set this environment variable
+    source_type: manual
+    notes: "PAID for alerts/history. Superstar investor stakes >1% with quarter-on-quarter change. Tip: for A, map investor -> client, Buy/Sell -> side and use kind: deal."
+
+  screener_in:
+    adapter: paid_template      # TODO(YOU): csv_import is simplest - export a screen to Excel/CSV
+    enabled: false
+    url: TODO
+    cookie_env: SCREENER_COOKIE # only if you use your logged-in session; check Screener's terms first
+    source_type: manual
+    notes: Free login / Premium. Exported screens (cash flow, debt) or watchlist.
+
+  tijori_finance:
+    adapter: paid_template
+    enabled: false
+    url: TODO
+    api_key_env: TIJORI_API_KEY
+    source_type: manual
+    notes: PAID tiers. Segment data, sector KPIs, concall notes.
+
+  researchbytes:
+    adapter: paid_template
+    enabled: false
+    url: TODO
+    api_key_env: RESEARCHBYTES_API_KEY
+    source_type: exchange_filing
+    notes: PAID subscription. Searchable filings and transcripts.
+
+  morningstar_india:
+    adapter: paid_template
+    enabled: false
+    url: TODO
+    api_key_env: MORNINGSTAR_API_KEY
+    source_type: manual
+    notes: Free basic web pages, paid data. Which funds own a company; manager profiles.

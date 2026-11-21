@@ -1,0 +1,28 @@
+# Copy this file to api_keys.yaml and fill in your keys (api_keys.yaml is git-ignored).
+# ============================================================================
+#  PUT YOUR API KEYS HERE.  This is the only file you need to edit for keys.
+#  Leave a value empty ("") to skip that feature - everything marked FREE still
+#  works without it. This file is git-ignored; never share it.
+#  Values here are loaded as environment variables when the app / ingest starts.
+#  (A real environment variable of the same name wins over this file.)
+# ============================================================================
+
+# ---- STRONGLY RECOMMENDED (free) -------------------------------------------
+# FRED key: more reliable macro data (US 10Y, Fed funds, USD/INR, Brent, India 10Y).
+# Without it the app tries FRED's public CSV, then falls back to Yahoo Finance / NY Fed.
+# Get one free in 1 minute: https://fredaccount.stlouisfed.org/apikeys
+FRED_API_KEY: ""
+
+# ---- OPTIONAL (pay-per-use) ------------------------------------------------
+# Claude reads each filing and extracts exact facts + "Summarise with Claude" on concalls.
+# Without it the app uses offline keyword rules (works, but rougher).
+# Get one at https://console.anthropic.com/settings/keys
+ANTHROPIC_API_KEY: ""
+
+# ---- OPTIONAL: paid / login data sources (only if you subscribe) ------------
+# Fill these AND enable the matching entry in config/sources.yaml (see README "Adding a paid source").
+TRENDLYNE_API_KEY: ""      # superstar investor holdings
+TIJORI_API_KEY: ""         # segment data, concall notes
+RESEARCHBYTES_API_KEY: ""  # searchable filings / transcripts
+MORNINGSTAR_API_KEY: ""    # which funds own a company
+SCREENER_COOKIE: ""        # your logged-in Screener.in session cookie (check their terms first)

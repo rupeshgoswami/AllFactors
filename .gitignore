@@ -1,0 +1,11 @@
+data/*.db
+data/*.csv
+data/imports/
+config/backups/
+__pycache__/
+.venv/
+.env
+config/api_keys.yaml
+.pytest_cache/
+data/*.json
+*.log
