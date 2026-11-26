@@ -323,7 +323,7 @@ SME companies report half-yearly, so data is sparse; defaults use a 90-day half-
 * BSE-only SME stocks have no holder parsing. BSE bulk deals need CSV import (BSE's page is JavaScript-rendered).
 * DalalOS has no shareholding data for the SME stocks tested.
 * Yahoo is often missing or thin for SME stocks.
-
+<!-- 123 -->
 ---
 
 ## 10. How it can be improved
